@@ -27,6 +27,7 @@ def test_workflow_prepares_each_job_before_validation():
     assert setup < install_tools < install_declared < validation
     assert "workflow_dispatch:" in text
     assert "pr_number:" in text
+    assert "inputs.pr_number || github.event.pull_request.number" in text
     assert "ref: v0.1.0" in text
     assert "--trusted-ref trusted/main" in text
     assert "repository: ${{ steps.pr.outputs.head_repo }}" in text

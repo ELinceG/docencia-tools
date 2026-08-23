@@ -12,6 +12,9 @@ permissions:
   contents: read
   pull-requests: read
 
+env:
+  PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+
 jobs:
   pendiente-publicacion:
     if: ${{ vars.DOCENCIA_TOOLS_REPOSITORY == '' }}
@@ -44,7 +47,6 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ inputs.pr_number }}
         run: |
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > "${RUNNER_TEMP}/pr.json"
           echo "head_ref=$(jq -r .head.ref "${RUNNER_TEMP}/pr.json")" >> "${GITHUB_OUTPUT}"
@@ -111,7 +113,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: estado-pr-${{ inputs.pr_number }}
+          name: estado-pr-${{ env.PR_NUMBER }}
           path: ${{ runner.temp }}/estado.json
           if-no-files-found: warn
 
