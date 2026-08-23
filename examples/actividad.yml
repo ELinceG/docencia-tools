@@ -1,0 +1,29 @@
+schema_version: 1
+activity: clase_04
+enabled: false
+timezone: America/Mexico_City
+expected_base: main
+branch_pattern: clase-04/{slug}
+required_files:
+  - entregas/{slug}/clase_04/actividad_clase_04.md
+allowed_files:
+  - entregas/{slug}/clase_04/actividad_clase_04.md
+  - entregas/{slug}/clase_04/imgs/*.png
+reviewers_per_submission: 1
+deadlines:
+  delivery: PENDIENTE
+  review: PENDIENTE
+  reply: PENDIENTE
+pull_request:
+  title_tolerance_minutes: 5
+  checklist_items: 6
+  required_sections:
+    - Descripción
+    - Archivos modificados
+    - Trabajo realizado
+    - Verificación realizada
+    - Dudas o dificultades
+    - Lista de verificación
+technical_validation:
+  dependencies: []
+  checks: []

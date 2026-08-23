@@ -1,0 +1,124 @@
+name: Validación reusable de entrega
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Número del pull request que se revalidará
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  pendiente-publicacion:
+    if: ${{ vars.DOCENCIA_TOOLS_REPOSITORY == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explicar activación pendiente
+        run: echo "La migración está preparada. Configura DOCENCIA_TOOLS_REPOSITORY después de publicar docencia-tools@v0.1.0."
+
+  validar:
+    if: ${{ vars.DOCENCIA_TOOLS_REPOSITORY != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar docencia-tools inmutable
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ vars.DOCENCIA_TOOLS_REPOSITORY }}
+          ref: v0.1.0
+          path: docencia-tools
+          persist-credentials: false
+
+      - name: Preparar Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Instalar docencia-tools y sus dependencias confiables
+        run: python -m pip install ./docencia-tools
+
+      - name: Obtener metadatos confiables del PR por REST
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > "${RUNNER_TEMP}/pr.json"
+          echo "head_ref=$(jq -r .head.ref "${RUNNER_TEMP}/pr.json")" >> "${GITHUB_OUTPUT}"
+          echo "head_sha=$(jq -r .head.sha "${RUNNER_TEMP}/pr.json")" >> "${GITHUB_OUTPUT}"
+          echo "head_repo=$(jq -r .head.repo.full_name "${RUNNER_TEMP}/pr.json")" >> "${GITHUB_OUTPUT}"
+
+      - name: Descargar reglas y referencias desde trusted_ref
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          path: course-trusted
+          persist-credentials: false
+
+      - name: Descargar exactamente head_sha sin ejecutar contenido
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.pr.outputs.head_repo }}
+          ref: ${{ steps.pr.outputs.head_sha }}
+          fetch-depth: 0
+          path: course-head
+          persist-credentials: false
+
+      - name: Conectar el historial no confiable con la base confiable
+        run: |
+          git -C course-head remote add trusted "${GITHUB_WORKSPACE}/course-trusted"
+          git -C course-head fetch trusted main
+
+      - name: Seleccionar configuración desde el árbol confiable
+        id: config
+        env:
+          HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+        run: |
+          config_path="$(docencia-tools seleccionar-config --directorio course-trusted/.docencia/actividades --rama "${HEAD_REF}")"
+          echo "path=${config_path}" >> "${GITHUB_OUTPUT}"
+
+      - name: Materializar e instalar dependencias declaradas por el profesor
+        env:
+          CONFIG_PATH: ${{ steps.config.outputs.path }}
+        run: |
+          docencia-tools dependencias --config "${CONFIG_PATH}" --salida "${RUNNER_TEMP}/docencia-requirements.txt"
+          if [[ -s "${RUNNER_TEMP}/docencia-requirements.txt" ]]; then
+            python -m pip install -r "${RUNNER_TEMP}/docencia-requirements.txt"
+          fi
+
+      - name: Validar frontera de confianza y entrega
+        id: validation
+        env:
+          CONFIG_PATH: ${{ steps.config.outputs.path }}
+        run: |
+          set +e
+          docencia-tools validar-pr \
+            --config "${CONFIG_PATH}" \
+            --evento "${RUNNER_TEMP}/pr.json" \
+            --repo-head course-head \
+            --trusted-root course-trusted \
+            --trusted-ref trusted/main \
+            --salida "${RUNNER_TEMP}/estado.json"
+          code="$?"
+          echo "exit_code=${code}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Guardar estado auditable
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: estado-pr-${{ inputs.pr_number }}
+          path: ${{ runner.temp }}/estado.json
+          if-no-files-found: warn
+
+      - name: Conservar el tipo de fallo en el check
+        if: ${{ steps.validation.outputs.exit_code != '0' }}
+        env:
+          EXIT_CODE: ${{ steps.validation.outputs.exit_code }}
+        run: |
+          echo "La validación terminó con código clasificado ${EXIT_CODE}; consulta el estado JSON y el log anterior."
+          exit "${EXIT_CODE}"

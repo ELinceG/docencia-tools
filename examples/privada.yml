@@ -1,0 +1,12 @@
+schema_version: 1
+extensions:
+  - student: ejemplo-alumno
+    deadline: "2026-08-24T23:59:00-06:00"
+    reason: NO PUBLICAR ESTE CAMPO
+exempt_from_reviewing: []
+exempt_from_receiving_review: []
+incompatible_groups: []
+incompatible_pairs: []
+directed_forbidden: []
+avoid: []
+forced_assignments: []
