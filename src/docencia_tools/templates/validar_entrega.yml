@@ -49,6 +49,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > "${RUNNER_TEMP}/pr.json"
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename' > "${RUNNER_TEMP}/changed-files.txt"
           echo "head_ref=$(jq -r .head.ref "${RUNNER_TEMP}/pr.json")" >> "${GITHUB_OUTPUT}"
           echo "head_sha=$(jq -r .head.sha "${RUNNER_TEMP}/pr.json")" >> "${GITHUB_OUTPUT}"
           echo "head_repo=$(jq -r .head.repo.full_name "${RUNNER_TEMP}/pr.json")" >> "${GITHUB_OUTPUT}"
@@ -80,7 +81,7 @@ jobs:
         env:
           HEAD_REF: ${{ steps.pr.outputs.head_ref }}
         run: |
-          config_path="$(docencia-tools seleccionar-config --directorio course-trusted/.docencia/actividades --rama "${HEAD_REF}")"
+          config_path="$(docencia-tools seleccionar-config --directorio course-trusted/.docencia/actividades --rama "${HEAD_REF}" --archivos "${RUNNER_TEMP}/changed-files.txt")"
           echo "path=${config_path}" >> "${GITHUB_OUTPUT}"
 
       - name: Materializar e instalar dependencias declaradas por el profesor

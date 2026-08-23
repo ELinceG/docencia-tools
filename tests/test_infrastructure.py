@@ -67,6 +67,19 @@ def test_selects_config_only_from_trusted_directory(config_path, tmp_path):
     assert select_activity(directory, "clase-04/ana-perez") == target
 
 
+def test_selects_activity_from_files_even_with_wrong_branch(config_path, tmp_path):
+    directory = tmp_path / "activities"
+    directory.mkdir()
+    target = directory / "class.yml"
+    target.write_text(config_path.read_text(encoding="utf-8"), encoding="utf-8")
+    selected = select_activity(
+        directory,
+        "rama-mal-nombrada",
+        ["entregas/ana-perez/clase_04/actividad_clase_04.md"],
+    )
+    assert selected == target
+
+
 def test_clean_venv_can_run_config_validation(config_path, tmp_path):
     venv = tmp_path / "venv"
     subprocess.run([sys.executable, "-m", "venv", "--system-site-packages", str(venv)], check=True)

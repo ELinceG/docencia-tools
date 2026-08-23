@@ -34,7 +34,8 @@ def _parser() -> argparse.ArgumentParser:
 
     select = subparsers.add_parser("seleccionar-config", help="Selecciona configuración por la rama del PR")
     select.add_argument("--directorio", required=True)
-    select.add_argument("--rama", required=True)
+    select.add_argument("--rama")
+    select.add_argument("--archivos", help="Archivo de texto con una ruta modificada por línea")
 
     validate = subparsers.add_parser("validar-pr", help="Valida un PR observado")
     validate.add_argument("--config", required=True)
@@ -179,7 +180,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Dependencias confiables escritas en {args.salida}.")
             return 0
         if args.command == "seleccionar-config":
-            print(select_activity(args.directorio, args.rama))
+            files = Path(args.archivos).read_text(encoding="utf-8").splitlines() if args.archivos else []
+            print(select_activity(args.directorio, args.rama, files))
             return 0
         if args.command == "validar-pr":
             return _validate_pr(args)

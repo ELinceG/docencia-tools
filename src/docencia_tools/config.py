@@ -204,13 +204,28 @@ def load_private(path: str | Path | None) -> dict[str, Any]:
     return _mapping(data, "configuración privada")
 
 
-def select_activity(config_directory: str | Path, branch: str) -> Path:
-    """Selecciona una sola actividad confiable a partir del patrón de rama."""
+def select_activity(
+    config_directory: str | Path,
+    branch: str | None = None,
+    changed_files: list[str] | None = None,
+) -> Path:
+    """Selecciona actividad por rutas observadas; usa la rama solo como respaldo."""
 
     directory = Path(config_directory)
+    configs = [(path, load_activity(path)) for path in sorted((*directory.glob("*.yml"), *directory.glob("*.yaml")))]
+    path_matches = [
+        path
+        for path, config in configs
+        if any(file.startswith("entregas/") and f"/{config.activity}/" in file for file in (changed_files or []))
+    ]
+    if len(path_matches) == 1:
+        return path_matches[0]
+    if len(path_matches) > 1:
+        raise InfrastructureError(f"Los archivos del PR coinciden con {len(path_matches)} actividades confiables; se esperaba exactamente una.")
+    if branch is None:
+        raise InfrastructureError("Los archivos del PR no permiten identificar una actividad confiable.")
     matches: list[Path] = []
-    for path in sorted((*directory.glob("*.yml"), *directory.glob("*.yaml"))):
-        config = load_activity(path)
+    for path, config in configs:
         pattern = config.branch_pattern.replace("{activity}", config.activity)
         prefix, marker, suffix = pattern.partition("{slug}")
         if marker and branch.startswith(prefix) and branch.endswith(suffix):
