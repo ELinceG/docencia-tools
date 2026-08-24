@@ -81,16 +81,21 @@ def _strings(value: Any, name: str, *, allow_empty: bool = False) -> tuple[str, 
 
 
 def _datetime(value: Any, name: str, timezone: str, *, enabled: bool) -> datetime | None:
-    if value in (None, "PENDIENTE"):
+    if value is None or value == "PENDIENTE":
         if enabled:
             raise InfrastructureError(f"'{name}' es obligatorio cuando la actividad está habilitada.")
         return None
-    if not isinstance(value, str):
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        if "T" not in value and " " not in value:
+            raise InfrastructureError(f"'{name}' no es un timestamp ISO 8601 válido.")
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise InfrastructureError(f"'{name}' no es un timestamp ISO 8601 válido.") from exc
+    else:
         raise InfrastructureError(f"'{name}' debe ser un timestamp ISO 8601.")
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError as exc:
-        raise InfrastructureError(f"'{name}' no es un timestamp ISO 8601 válido.") from exc
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=ZoneInfo(timezone))
     return parsed.astimezone(ZoneInfo(timezone))

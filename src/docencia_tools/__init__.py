@@ -3,4 +3,4 @@
 from .config import ActivityConfig, load_activity
 
 __all__ = ["ActivityConfig", "load_activity"]
-__version__ = "0.1.1"
+__version__ = "0.1.2"
