@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from docencia_tools import cli
-from docencia_tools.closure import close_delivery
+from docencia_tools.closure import close_delivery, consolidate_equivalent_states
 from docencia_tools.config import Deadlines
 from docencia_tools.errors import InfrastructureError
 
@@ -28,17 +28,25 @@ def _state(
     reviewable: bool = True,
     activity: str = "clase_04",
     incoming_punctuality: str = "on_time",
+    pull_request: int | None = None,
+    head_sha: str | None = None,
+    current_errors: list[str] | None = None,
 ) -> dict[str, object]:
+    pr_number = pull_request if pull_request is not None else 1000 + sum(map(ord, student))
     return {
         "schema_version": 1,
         "activity": activity,
         "student": student,
-        "pull_request": {"number": len(student), "head_sha": f"sha-{student}"},
+        "pull_request": pr_number,
+        "head_sha": head_sha if head_sha is not None else f"sha-{student}",
+        "merge_base": f"base-{pr_number}",
+        "trusted_ref": "trusted/main",
         "first_complete_at": (
             {
                 "timestamp": first_complete,
                 "sha": f"complete-{student}",
                 "source": "git-history",
+                "approximate": True,
             }
             if first_complete is not None
             else None
@@ -47,6 +55,8 @@ def _state(
         "applied_deadline": DELIVERY,
         "punctuality": incoming_punctuality,
         "reviewable": reviewable,
+        "current_errors": list(current_errors or []),
+        "failures": [],
     }
 
 
@@ -257,11 +267,196 @@ def test_forced_assignment_is_respected(activity):
     assert ("aline", "francisco") in result.assignment.pairs
 
 
-def test_duplicate_student_states_fail_clearly(activity):
-    states = _three_states() + [_state("aline")]
+def test_equivalent_student_states_are_consolidated(activity):
+    states = [
+        _state("aline", pull_request=28, head_sha="same-sha"),
+        _state("aline", pull_request=44, head_sha="same-sha"),
+        _state("francisco"),
+        _state("leonardo"),
+    ]
 
-    with pytest.raises(InfrastructureError, match="dos estados.*aline"):
+    result = _close(activity, states)
+    public_student = result.as_dict()["students"]["aline"]
+
+    assert result.students["aline"].pull_request == 44
+    assert result.students["aline"].observed_pull_requests == (28, 44)
+    assert public_student["pull_request"] == 44
+    assert public_student["observed_pull_requests"] == [28, 44]
+
+
+def test_equivalent_states_use_oldest_first_complete(activity):
+    old = _state(
+        "aline",
+        pull_request=37,
+        head_sha="same-sha",
+        first_complete="2026-08-23T22:00:00-06:00",
+    )
+    old["first_complete_at"]["observation"] = "preservada"
+    new = _state(
+        "aline",
+        pull_request=59,
+        head_sha="same-sha",
+        first_complete="2026-08-24T08:00:00-06:00",
+        incoming_punctuality="late",
+    )
+
+    consolidated = consolidate_equivalent_states(
+        [new, old],
+        activity="clase_04",
+        timezone="America/Mexico_City",
+    )["aline"]
+    result = _close(activity, [old, new, _state("francisco"), _state("leonardo")])
+    aline = result.students["aline"]
+
+    assert consolidated["first_complete_at"] == old["first_complete_at"]
+    assert aline.first_complete_at["timestamp"] == "2026-08-23T22:00:00-06:00"
+    assert aline.first_complete_at["observation"] == "preservada"
+    assert aline.punctuality == "on_time"
+    assert aline.eligible_for_peer_review
+
+
+def test_equivalent_states_use_only_canonical_current_state(activity):
+    old = _state(
+        "aline",
+        pull_request=37,
+        head_sha="same-sha",
+        reviewable=True,
+        current_errors=["error:rama"],
+    )
+    old["failures"] = [{"code": "error:rama"}]
+    new = _state(
+        "aline",
+        pull_request=59,
+        head_sha="same-sha",
+        reviewable=False,
+        current_errors=["error:base"],
+    )
+    new["failures"] = [{"code": "error:base"}]
+
+    consolidated = consolidate_equivalent_states(
+        [old, new],
+        activity="clase_04",
+        timezone="America/Mexico_City",
+    )["aline"]
+    result = _close(activity, [old, new, _state("francisco"), _state("leonardo")])
+
+    assert consolidated["reviewable"] is False
+    assert consolidated["current_errors"] == ["error:base"]
+    assert consolidated["failures"] == [{"code": "error:base"}]
+    assert consolidated["merge_base"] == new["merge_base"]
+    assert result.students["aline"].reviewable is False
+    assert not result.students["aline"].eligible_for_peer_review
+
+
+def test_equivalent_null_and_complete_states_keep_complete_observation(activity):
+    incomplete = _state(
+        "aline",
+        pull_request=28,
+        head_sha="same-sha",
+        first_complete=None,
+    )
+    complete = _state(
+        "aline",
+        pull_request=44,
+        head_sha="same-sha",
+        first_complete=ON_TIME,
+    )
+
+    result = _close(
+        activity,
+        [incomplete, complete, _state("francisco"), _state("leonardo")],
+    )
+
+    assert result.students["aline"].first_complete_at is not None
+    assert result.students["aline"].punctuality == "on_time"
+
+
+def test_same_student_with_different_head_shas_fails_clearly(activity):
+    states = _three_states() + [
+        _state("aline", pull_request=2000, head_sha="different-sha")
+    ]
+
+    with pytest.raises(InfrastructureError, match="ambigua.*head_sha distintos"):
         _close(activity, states)
+
+
+def test_three_equivalent_pull_requests_are_consolidated(activity):
+    equivalent = [
+        _state("aline", pull_request=number, head_sha="same-sha")
+        for number in (28, 44, 61)
+    ]
+
+    result = _close(activity, [*equivalent, _state("francisco"), _state("leonardo")])
+
+    assert result.students["aline"].pull_request == 61
+    assert result.students["aline"].observed_pull_requests == (28, 44, 61)
+
+
+def test_equivalent_state_order_does_not_change_closure(activity):
+    states = [
+        _state("aline", pull_request=28, head_sha="same-sha", first_complete=ON_TIME),
+        _state("aline", pull_request=44, head_sha="same-sha", first_complete=LATE),
+        _state("francisco"),
+        _state("leonardo"),
+    ]
+
+    assert _close(activity, states).as_dict() == _close(activity, reversed(states)).as_dict()
+
+
+def test_single_pull_request_keeps_normal_behavior(activity):
+    state = _state("aline", pull_request=28, head_sha="only-sha")
+
+    result = _close(activity, [state, _state("francisco"), _state("leonardo")])
+
+    assert result.students["aline"].pull_request == 28
+    assert result.students["aline"].observed_pull_requests == (28,)
+    assert result.students["aline"].first_complete_at["timestamp"] == ON_TIME
+
+
+@pytest.mark.parametrize(
+    ("pull_request", "head_sha", "message"),
+    [
+        (0, "sha", "pull_request entero válido"),
+        (True, "sha", "pull_request entero válido"),
+        ("28", "sha", "pull_request entero válido"),
+        (28, "", "head_sha válido"),
+        (28, None, "head_sha válido"),
+    ],
+)
+def test_equivalent_state_identity_must_be_safe(
+    activity,
+    pull_request,
+    head_sha,
+    message,
+):
+    state = _state("aline")
+    state["pull_request"] = pull_request
+    state["head_sha"] = head_sha
+
+    with pytest.raises(InfrastructureError, match=message):
+        _close(activity, [state])
+
+
+def test_private_reason_is_absent_from_ambiguous_equivalent_error(activity):
+    secret = "razón privada que no debe aparecer"
+    private = {
+        "deadline_overrides": [
+            _override(
+                student="aline",
+                deadline="2026-08-24T00:05:00-06:00",
+                reason=secret,
+            )
+        ]
+    }
+    states = [
+        _state("aline", pull_request=28, head_sha="sha-one"),
+        _state("aline", pull_request=44, head_sha="sha-two"),
+    ]
+
+    with pytest.raises(InfrastructureError) as error:
+        _close(activity, states, private=private)
+
+    assert secret not in str(error.value)
 
 
 def test_state_from_another_activity_fails(activity):

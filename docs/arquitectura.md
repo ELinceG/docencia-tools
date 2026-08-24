@@ -42,6 +42,12 @@ La hora oficial es la primera observación en la que todos los archivos obligato
 
 La puntualidad es un hecho histórico. Corregir después la rama, el título o la descripción elimina errores actuales, pero no reescribe `entrega:tarde`.
 
+## PR equivalentes y entrega lógica
+
+Varios estados con la misma actividad, el mismo alumno y el mismo `head_sha` son observaciones equivalentes de una sola entrega lógica. El cierre usa como PR canónico el de número más alto para conservar la situación actual, registra todos los números en `observed_pull_requests` y toma el objeto `first_complete_at` válido con timestamp más antiguo; así una reapertura o un reemplazo puramente técnico no retrasa artificialmente la entrega.
+
+Los campos actuales, incluida la revisabilidad y los errores, proceden únicamente del PR canónico y no se mezclan con diagnósticos antiguos ya corregidos. Si un alumno tiene varios estados con `head_sha` distintos, la continuidad es ambigua: se produce `infrastructure_error` y el cierre no intenta elegir ni combinar entregas automáticamente.
+
 ## Revisión y réplica
 
 Solo cuenta una GitHub Pull Request Review del revisor asignado con estado `APPROVED` o `CHANGES_REQUESTED` y evidencia breve de cambios, archivos, pruebas y observaciones. Un comentario normal no sustituye la review.
