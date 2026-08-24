@@ -12,4 +12,4 @@ __all__ = [
     "load_activity",
     "render_peer_review_markdown",
 ]
-__version__ = "0.1.4"
+__version__ = "0.1.5"
