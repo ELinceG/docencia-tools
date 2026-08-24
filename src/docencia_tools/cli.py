@@ -82,15 +82,10 @@ def _pr_payload(event: dict[str, Any]) -> dict[str, Any]:
         raise InfrastructureError(f"El JSON del PR está incompleto: {exc}") from exc
 
 
-def _slug(branch: str) -> str:
-    return branch.split("/", 1)[1] if "/" in branch else ""
-
-
 def _validate_pr(args: argparse.Namespace) -> int:
     config = load_activity(args.config)
     pr = _pr_payload(_read_json(args.evento))
     merge_base, changed, head_files = observe_diff(args.repo_head, args.trusted_ref, pr["head_sha"])
-    slug = _slug(pr["head_ref"])
     protocol = validate_protocol(
         config,
         branch=pr["head_ref"],
@@ -100,13 +95,15 @@ def _validate_pr(args: argparse.Namespace) -> int:
         created_at=pr["created_at"],
         changed_files=changed,
         head_files=head_files,
-        slug=slug,
     )
-    observations = clamp_to_pr_creation(
-        observations_from_git(args.repo_head, merge_base, pr["head_sha"]),
-        pr["created_at"],
-    )
-    first = first_complete_at(config, slug, observations)
+    slug = protocol.slug
+    first = None
+    if slug is not None:
+        observations = clamp_to_pr_creation(
+            observations_from_git(args.repo_head, merge_base, pr["head_sha"]),
+            pr["created_at"],
+        )
+        first = first_complete_at(config, slug, observations)
     deadline = config.deadlines.delivery
     if first is None:
         punctuality = "incomplete"
@@ -115,7 +112,7 @@ def _validate_pr(args: argparse.Namespace) -> int:
     else:
         punctuality = "on_time" if first.timestamp <= deadline else "late"
     issues = list(protocol.issues)
-    if protocol.safe_to_execute:
+    if protocol.safe_to_execute and slug is not None:
         try:
             issues.extend(run_technical_checks(config, slug=slug, head_root=args.repo_head, trusted_root=args.trusted_root))
         except InfrastructureError as exc:

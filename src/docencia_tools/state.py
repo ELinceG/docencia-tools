@@ -13,7 +13,7 @@ STATE_SCHEMA_VERSION = 1
 def build_state(
     *,
     activity: str,
-    student: str,
+    student: str | None,
     pr_number: int,
     head_sha: str,
     merge_base: str,

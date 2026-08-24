@@ -37,6 +37,7 @@ SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 @dataclass(frozen=True)
 class ProtocolResult:
+    slug: str | None
     issues: tuple[Issue, ...]
     reviewable: bool
     safe_to_execute: bool
@@ -110,6 +111,15 @@ def infer_slugs(changed_files: list[str], activity: str) -> set[str]:
     return {match.group(1) for path in changed_files if (match := pattern.match(path))}
 
 
+def _valid_slug_from_branch(config: ActivityConfig, branch: str) -> str | None:
+    pattern = config.branch_pattern.replace("{activity}", config.activity)
+    prefix, marker, suffix = pattern.partition("{slug}")
+    if not marker or not branch.startswith(prefix) or not branch.endswith(suffix):
+        return None
+    candidate = branch[len(prefix) : len(branch) - len(suffix) if suffix else None]
+    return candidate if SLUG_RE.fullmatch(candidate) else None
+
+
 def validate_protocol(
     config: ActivityConfig,
     *,
@@ -120,37 +130,49 @@ def validate_protocol(
     created_at: datetime,
     changed_files: list[str],
     head_files: set[str],
-    slug: str | None = None,
 ) -> ProtocolResult:
     issues: list[Issue] = []
     inferred = infer_slugs(changed_files, config.activity)
-    if slug is None:
-        if len(inferred) == 1:
-            slug = next(iter(inferred))
-        else:
-            slug = branch.split("/", 1)[1] if "/" in branch else ""
-    if not SLUG_RE.fullmatch(slug):
-        issues.append(_issue("error:rama", "El nombre debe usar minúsculas ASCII y guiones."))
-    if len(inferred) > 1 or (inferred and slug not in inferred):
+    valid_inferred = {slug for slug in inferred if SLUG_RE.fullmatch(slug)}
+    ambiguous_owner = len(inferred) > 1
+    invalid_path_owner = len(inferred) == 1 and not valid_inferred
+    if ambiguous_owner:
         issues.append(_issue("error:propietario", "La entrega contiene rutas de más de un alumno.", blocks_review=True, blocks_execution=True))
-    expected_branch = config.branch_pattern.format(slug=slug, activity=config.activity)
+        slug = None
+    elif invalid_path_owner:
+        slug = None
+    elif len(valid_inferred) == 1:
+        slug = next(iter(valid_inferred))
+    else:
+        slug = _valid_slug_from_branch(config, branch)
+
+    expected_branch = config.branch_pattern.format(slug=slug or "<nombre-apellido>", activity=config.activity)
     if branch != expected_branch:
         issues.append(_issue("error:rama", f"La rama esperada es '{expected_branch}'."))
     if base != config.expected_base:
         issues.append(_issue("error:base", f"La rama base debe ser '{config.expected_base}'.", blocks_review=True, blocks_execution=True))
-    issues.extend(validate_title(config, title, slug, created_at))
+    if slug is None:
+        issues.append(_issue("error:titulo", "No se pudo comparar el título porque la identidad de la entrega no es única y válida."))
+    else:
+        issues.extend(validate_title(config, title, slug, created_at))
     issues.extend(validate_description(config, body))
 
-    required = set(config.required_for(slug))
-    missing = sorted(required - head_files)
-    if missing:
-        issues.append(_issue("error:archivos-faltantes", f"Faltan archivos obligatorios: {', '.join(missing)}.", blocks_review=True, blocks_execution=True))
-    allowed = config.allowed_for(slug)
-    extras = sorted(path for path in changed_files if not any(PurePosixPath(path).match(pattern) for pattern in allowed))
-    if extras:
-        issues.append(_issue("error:archivos-extra", f"Hay archivos fuera del alcance permitido: {', '.join(extras)}.", blocks_execution=True))
+    if slug is not None:
+        required = set(config.required_for(slug))
+        missing = sorted(required - head_files)
+        if missing:
+            issues.append(_issue("error:archivos-faltantes", f"Faltan archivos obligatorios: {', '.join(missing)}.", blocks_review=True, blocks_execution=True))
+        allowed = config.allowed_for(slug)
+        extras = sorted(path for path in changed_files if not any(PurePosixPath(path).match(pattern) for pattern in allowed))
+        if extras:
+            issues.append(_issue("error:archivos-extra", f"Hay archivos fuera del alcance permitido: {', '.join(extras)}.", blocks_execution=True))
+    elif not ambiguous_owner:
+        issues.append(_issue("error:archivos-faltantes", "No se pudo determinar una identidad válida para buscar los archivos obligatorios.", blocks_review=True, blocks_execution=True))
+        if changed_files:
+            issues.append(_issue("error:archivos-extra", f"No fue posible asociar estos archivos con una identidad válida: {', '.join(sorted(changed_files))}.", blocks_execution=True))
 
     return ProtocolResult(
+        slug=slug,
         issues=tuple(issues),
         reviewable=not any(issue.blocks_review for issue in issues),
         safe_to_execute=not any(issue.blocks_execution for issue in issues),
