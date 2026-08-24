@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import yaml
 
 from .errors import InfrastructureError
+from .timestamps import parse_iso_datetime
 
 
 @dataclass(frozen=True)
@@ -85,20 +86,7 @@ def _datetime(value: Any, name: str, timezone: str, *, enabled: bool) -> datetim
         if enabled:
             raise InfrastructureError(f"'{name}' es obligatorio cuando la actividad está habilitada.")
         return None
-    if isinstance(value, datetime):
-        parsed = value
-    elif isinstance(value, str):
-        if "T" not in value and " " not in value:
-            raise InfrastructureError(f"'{name}' no es un timestamp ISO 8601 válido.")
-        try:
-            parsed = datetime.fromisoformat(value)
-        except ValueError as exc:
-            raise InfrastructureError(f"'{name}' no es un timestamp ISO 8601 válido.") from exc
-    else:
-        raise InfrastructureError(f"'{name}' debe ser un timestamp ISO 8601.")
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=ZoneInfo(timezone))
-    return parsed.astimezone(ZoneInfo(timezone))
+    return parse_iso_datetime(value, name=f"'{name}'", timezone=timezone)
 
 
 def load_activity(path: str | Path) -> ActivityConfig:

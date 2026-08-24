@@ -12,6 +12,13 @@ from typing import Any
 import yaml
 
 from .assignment import AssignmentImpossible, assign_reviews, constraints_from_private
+from .closure import (
+    ClosurePending,
+    close_delivery,
+    load_public_states,
+    require_closure_due,
+    write_closure,
+)
 from .config import load_activity, load_private, select_activity
 from .errors import EXIT_CODES, FailureKind, InfrastructureError, Issue
 from .git_observation import observe_diff
@@ -19,6 +26,7 @@ from .history import clamp_to_pr_creation, first_complete_at, observations_from_
 from .protocol import validate_protocol
 from .state import build_state, write_state
 from .technical import run_technical_checks, write_requirements
+from .timestamps import parse_iso_datetime
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -51,6 +59,27 @@ def _parser() -> argparse.ArgumentParser:
     assign.add_argument("--revisores", type=int, default=1)
     assign.add_argument("--semilla", required=True)
     assign.add_argument("--salida", required=True)
+
+    close = subparsers.add_parser(
+        "cerrar-entrega",
+        help="Cierra una entrega y prepara su asignación de revisiones",
+    )
+    close.add_argument("--config", required=True)
+    close.add_argument(
+        "--estados",
+        nargs="+",
+        required=True,
+        help="Uno o más archivos JSON o directorios con archivos *.json",
+    )
+    close.add_argument("--privada")
+    close.add_argument("--semilla", required=True)
+    close.add_argument("--ahora", required=True, help="Timestamp ISO 8601 reproducible")
+    close.add_argument("--salida", required=True)
+    close.add_argument(
+        "--si-corresponde",
+        action="store_true",
+        help="Termina exitosamente sin salida si la ventana de entrega sigue abierta",
+    )
     return parser
 
 
@@ -165,6 +194,29 @@ def _assign(args: argparse.Namespace) -> int:
     return 0
 
 
+def _close_delivery(args: argparse.Namespace) -> int:
+    config = load_activity(args.config)
+    private = load_private(args.privada)
+    now = parse_iso_datetime(args.ahora, name="'ahora'", timezone=config.timezone)
+    try:
+        require_closure_due(config, private=private, now=now)
+    except ClosurePending:
+        if not args.si_corresponde:
+            raise
+        print("Cierre pendiente: todavía existe una ventana válida de entrega.")
+        return 0
+    result = close_delivery(
+        config,
+        load_public_states(args.estados),
+        private=private,
+        seed=args.semilla,
+        now=now,
+    )
+    write_closure(args.salida, result)
+    print(f"Cierre de {result.activity} guardado en {args.salida}.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -184,6 +236,8 @@ def main(argv: list[str] | None = None) -> int:
             return _validate_pr(args)
         if args.command == "asignar":
             return _assign(args)
+        if args.command == "cerrar-entrega":
+            return _close_delivery(args)
     except InfrastructureError as exc:
         print(f"[infrastructure_error] {exc}", file=sys.stderr)
         return EXIT_CODES[FailureKind.INFRASTRUCTURE]
