@@ -24,6 +24,8 @@ docencia-tools validar-config --config ruta/actividad.yml
 docencia-tools dependencias --config ruta/actividad.yml --salida /tmp/requisitos.txt
 docencia-tools validar-pr --config ruta/confiable.yml --evento evento.json --repo-head ruta/head --trusted-ref origin/main --salida estado.json
 docencia-tools asignar --participantes participantes.yml --privada excepciones.yml --salida asignaciones.json
+docencia-tools cerrar-entrega --config ruta/actividad.yml --estados estados/ --semilla clase_04 --ahora 2026-08-24T00:00:00-06:00 --salida cierre.json
+docencia-tools renderizar-asignaciones --config ruta/actividad.yml --cierre cierre.json --salida asignaciones_revision.md
 ```
 
 `validar-pr` espera que la configuración proceda de un checkout confiable. El árbol indicado mediante `--repo-head` se considera no confiable: primero se calcula el diff real desde `merge_base`, se validan rutas y archivos, y solo después se permite ejecutar código de la entrega.

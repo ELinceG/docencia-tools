@@ -24,6 +24,7 @@ from .errors import EXIT_CODES, FailureKind, InfrastructureError, Issue
 from .git_observation import observe_diff
 from .history import clamp_to_pr_creation, first_complete_at, observations_from_git
 from .protocol import validate_protocol
+from .render import load_closure, render_peer_review_markdown, write_peer_review_markdown
 from .state import build_state, write_state
 from .technical import run_technical_checks, write_requirements
 from .timestamps import parse_iso_datetime
@@ -80,6 +81,14 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Termina exitosamente sin salida si la ventana de entrega sigue abierta",
     )
+
+    render = subparsers.add_parser(
+        "renderizar-asignaciones",
+        help="Genera el Markdown público desde un cierre ya calculado",
+    )
+    render.add_argument("--config", required=True)
+    render.add_argument("--cierre", required=True)
+    render.add_argument("--salida", required=True)
     return parser
 
 
@@ -217,6 +226,14 @@ def _close_delivery(args: argparse.Namespace) -> int:
     return 0
 
 
+def _render_assignments(args: argparse.Namespace) -> int:
+    config = load_activity(args.config)
+    markdown = render_peer_review_markdown(config, load_closure(args.cierre))
+    write_peer_review_markdown(args.salida, markdown)
+    print(f"Asignaciones de {config.activity} guardadas en {args.salida}.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -238,6 +255,8 @@ def main(argv: list[str] | None = None) -> int:
             return _assign(args)
         if args.command == "cerrar-entrega":
             return _close_delivery(args)
+        if args.command == "renderizar-asignaciones":
+            return _render_assignments(args)
     except InfrastructureError as exc:
         print(f"[infrastructure_error] {exc}", file=sys.stderr)
         return EXIT_CODES[FailureKind.INFRASTRUCTURE]

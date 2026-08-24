@@ -54,6 +54,20 @@ Solo cuenta una GitHub Pull Request Review del revisor asignado con estado `APPR
 
 Después de `APPROVED` basta una respuesta del autor. Después de `CHANGES_REQUESTED` se necesita respuesta y al menos un commit posterior. Una segunda review posterior a los commits de réplica es opcional y registra extra, tanto si aprueba como si vuelve a solicitar cambios. Nunca se hace merge automático.
 
+## Renderizado público de asignaciones
+
+El comando `renderizar-asignaciones` transforma un `cierre.json` ya calculado en `asignaciones_revision.md`. La separación es deliberada: `cierre.json` conserva la auditoría y el estado estructurado, mientras que `asignaciones_revision.md` contiene únicamente las instrucciones públicas mínimas para estudiantes.
+
+```text
+cierre.json
+    ↓
+renderizar-asignaciones
+    ↓
+asignaciones_revision.md
+```
+
+El renderer no recibe configuración privada, no consulta GitHub y no recalcula puntualidad, elegibilidad, excepciones, PR equivalentes ni asignaciones. Construye el documento desde una lista explícita de campos públicos: actividad, deadline de revisión, pares asignados, slugs y PR canónico de cada autor. Los excluidos se mencionan solo mediante una sección genérica; sus identidades, causas y cualquier campo adicional del cierre no se serializan.
+
 ## Estado y labels
 
 El estado público JSON incluye actividad, alumno, PR, `head_sha`, `merge_base`, `trusted_ref`, `first_complete_at`, deadlines general y aplicado, puntualidad, revisabilidad, errores actuales, hechos históricos, excepción aplicada sin motivo privado, asignación, semilla, review, réplica, commits, segunda review y extra. La información privada permanece en otro archivo y otro repositorio.
