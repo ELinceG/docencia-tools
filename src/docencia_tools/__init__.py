@@ -10,4 +10,4 @@ __all__ = [
     "consolidate_equivalent_states",
     "load_activity",
 ]
-__version__ = "0.1.3"
+__version__ = "0.1.4"
