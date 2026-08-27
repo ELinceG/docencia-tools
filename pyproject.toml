@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docencia-tools"
-version = "0.1.5"
+version = "0.1.6"
 description = "Automatización auditable y reusable para entregas docentes en GitHub"
 readme = "README.md"
 requires-python = ">=3.11"

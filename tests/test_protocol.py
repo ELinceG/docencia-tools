@@ -2,6 +2,8 @@ from dataclasses import replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from docencia_tools.protocol import validate_description, validate_protocol, validate_title
 
 
@@ -87,6 +89,91 @@ def test_image_pattern_does_not_allow_nested_directories(activity, valid_body):
         ],
     )
     assert "error:archivos-extra" in result.current_error_labels
+
+
+def _class03(activity):
+    return replace(
+        activity,
+        activity="clase_03",
+        branch_pattern="clase-03/{slug}",
+        required_files=(
+            "entregas/{slug}/clase_03/README.md",
+            "entregas/{slug}/clase_03/conversion_tiempo.py",
+        ),
+        allowed_files=(
+            "entregas/{slug}/clase_03/README.md",
+            "entregas/{slug}/clase_03/conversion_tiempo.py",
+        ),
+    )
+
+
+def test_duplicated_prefix_paths_are_missing_and_extra(activity, valid_body):
+    class03 = _class03(activity)
+    duplicated_files = [
+        "entregas/ana-perez/entregas/ana-perez/clase_03/README.md",
+        "entregas/ana-perez/entregas/ana-perez/clase_03/conversion_tiempo.py",
+    ]
+    result = validate_protocol(
+        class03,
+        branch="clase-03/ana-perez",
+        base="main",
+        title="[clase_03] ana-perez (domingo,23,agosto 14:05)",
+        body=valid_body,
+        created_at=datetime(2026, 8, 23, 14, 5, tzinfo=TZ),
+        changed_files=duplicated_files,
+        head_files=set(duplicated_files),
+    )
+    assert {"error:archivos-faltantes", "error:archivos-extra"} <= set(result.current_error_labels)
+    assert not result.reviewable
+    assert not result.safe_to_execute
+
+
+@pytest.mark.parametrize(
+    ("path", "is_extra"),
+    [
+        (
+            "entregas/ana-perez/clase_03/README.md",
+            False,
+        ),
+        (
+            "foo/entregas/ana-perez/clase_03/README.md",
+            True,
+        ),
+        (
+            "entregas/ana-perez/entregas/ana-perez/clase_03/README.md",
+            True,
+        ),
+    ],
+)
+def test_exact_allowed_files_match_from_repository_root(activity, valid_body, path, is_extra):
+    required = "entregas/ana-perez/clase_03/README.md"
+    result = validate_protocol(
+        _class03(activity),
+        branch="clase-03/ana-perez",
+        base="main",
+        title="[clase_03] ana-perez (domingo,23,agosto 14:05)",
+        body=valid_body,
+        created_at=datetime(2026, 8, 23, 14, 5, tzinfo=TZ),
+        changed_files=[required, path],
+        head_files={required},
+    )
+    assert ("error:archivos-extra" in result.current_error_labels) is is_extra
+
+
+@pytest.mark.parametrize(
+    ("path", "is_extra"),
+    [
+        ("entregas/ana-perez/clase_04/imgs/figura.png", False),
+        ("entregas/ana-perez/clase_04/imgs/sub/figura.png", True),
+    ],
+)
+def test_glob_allowed_files_match_from_repository_root(activity, valid_body, path, is_extra):
+    result = _validate(
+        activity,
+        valid_body,
+        changed_files=["entregas/ana-perez/clase_04/actividad_clase_04.md", path],
+    )
+    assert ("error:archivos-extra" in result.current_error_labels) is is_extra
 
 
 def _class02(activity):

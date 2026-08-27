@@ -120,6 +120,11 @@ def _valid_slug_from_branch(config: ActivityConfig, branch: str) -> str | None:
     return candidate if SLUG_RE.fullmatch(candidate) else None
 
 
+def _matches_allowed_repository_path(path: str, pattern: str) -> bool:
+    """Comprueba un patrón relativo contra la ruta completa del repositorio."""
+    return PurePosixPath("/" + path).match("/" + pattern)
+
+
 def validate_protocol(
     config: ActivityConfig,
     *,
@@ -163,7 +168,7 @@ def validate_protocol(
         if missing:
             issues.append(_issue("error:archivos-faltantes", f"Faltan archivos obligatorios: {', '.join(missing)}.", blocks_review=True, blocks_execution=True))
         allowed = config.allowed_for(slug)
-        extras = sorted(path for path in changed_files if not any(PurePosixPath(path).match(pattern) for pattern in allowed))
+        extras = sorted(path for path in changed_files if not any(_matches_allowed_repository_path(path, pattern) for pattern in allowed))
         if extras:
             issues.append(_issue("error:archivos-extra", f"Hay archivos fuera del alcance permitido: {', '.join(extras)}.", blocks_execution=True))
     elif not ambiguous_owner:
